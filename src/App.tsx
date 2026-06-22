@@ -1097,7 +1097,7 @@ function BookingPage({ settings, rooms, draft, onChange, onSubmit, vouchers, onA
           <span>☕</span>
           <span className="text-xs uppercase tracking-[0.35em] font-sans">Private Room Reservations</span>
         </div>
-        <h2 className="text-4xl font-serif font-semibold tracking-tight text-stone-100">Call dibs on your weekly dream hangout spaces</h2>
+        <h2 className="text-4xl font-serif font-semibold tracking-tight text-stone-100">Call dibs on your weekly dream hangout space</h2>
         <p className="text-stone-400 leading-relaxed">{settings.description}</p>
 
         {rooms.length > 1 && (
