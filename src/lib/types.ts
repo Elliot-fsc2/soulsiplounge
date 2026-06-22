@@ -127,6 +127,14 @@ export interface Payment {
   createdAt: string;
 }
 
+export interface StaffUser {
+  id: string;
+  email: string;
+  password: string;
+  role: "admin" | "staff";
+  createdAt: string;
+}
+
 export interface BankAccount {
   id: string;
   bankName: string;

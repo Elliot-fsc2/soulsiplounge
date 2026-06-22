@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import type {
   AdminTab, BankAccount, Booking, BookingDraft, BookingStatus, ContactDraft, ContactMessage, ContactStatus,
-  Duration, Payment, RoomItem, RoomPricingTier, Settings, ToastItem, ToastTone, View, Voucher, VoucherType,
+  Duration, Payment, RoomItem, RoomPricingTier, Settings, StaffUser, ToastItem, ToastTone, View, Voucher, VoucherType,
 } from "./lib/types";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import * as db from "./lib/db";
@@ -15,6 +15,7 @@ const STORAGE_KEYS = {
   vouchers: "soul-vouchers",
   payments: "soul-payments",
   bankAccounts: "soul-bank-accounts",
+  staffUsers: "soul-staff-users",
 };
 
 // ---------- Pricing data exactly from the provided image ----------
@@ -410,7 +411,10 @@ function App() {
   const [session, setSession] = useState<import("@supabase/supabase-js").Session | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [pwAdminLoggedIn, setPwAdminLoggedIn] = useState(false);
-  const isAdminLoggedIn = isSupabaseConfigured ? session : pwAdminLoggedIn;
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+  const [staffUserLoggedIn, setStaffUserLoggedIn] = useState<string | null>(null);
+  const isAdminLoggedIn = isSupabaseConfigured ? (session || staffUserLoggedIn !== null) : (pwAdminLoggedIn || staffUserLoggedIn !== null);
+  const isStaff = staffUserLoggedIn !== null;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [contacts, setContacts] = useState<ContactMessage[]>([]);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -445,15 +449,17 @@ function App() {
           setVouchers(readStorage(STORAGE_KEYS.vouchers, defaultVouchers));
           setPayments(readStorage(STORAGE_KEYS.payments, []));
           setBankAccounts(readStorage(STORAGE_KEYS.bankAccounts, defaultBankAccounts));
+          setStaffUsers(readStorage(STORAGE_KEYS.staffUsers, []));
         } else {
           await db.seedDefaults(defaultBookings, defaultContacts, defaultSettings, defaultVouchers);
-          const [b, c, s, v, p, ba] = await Promise.all([
+          const [b, c, s, v, p, ba, su] = await Promise.all([
             db.fetchBookings(),
             db.fetchContacts(),
             db.fetchSettings(),
             db.fetchVouchers(),
             db.fetchPayments(),
             db.fetchBankAccounts(),
+            db.fetchStaffUsers(),
           ]);
           setBookings(b);
           setContacts(c);
@@ -461,6 +467,7 @@ function App() {
           setVouchers(v);
           setPayments(p);
           setBankAccounts(ba.length > 0 ? ba : defaultBankAccounts);
+          setStaffUsers(su);
         }
       } catch {
         setBookings(readStorage(STORAGE_KEYS.bookings, defaultBookings));
@@ -474,6 +481,7 @@ function App() {
         setVouchers(readStorage(STORAGE_KEYS.vouchers, defaultVouchers));
         setPayments(readStorage(STORAGE_KEYS.payments, []));
         setBankAccounts(readStorage(STORAGE_KEYS.bankAccounts, defaultBankAccounts));
+        setStaffUsers(readStorage(STORAGE_KEYS.staffUsers, []));
       } finally {
         setDataLoading(false);
       }
@@ -500,6 +508,7 @@ function App() {
   useEffect(() => { if (syncLocalStorage) writeStorage(STORAGE_KEYS.vouchers, vouchers); }, [vouchers, syncLocalStorage]);
   useEffect(() => { if (syncLocalStorage) writeStorage(STORAGE_KEYS.payments, payments); }, [payments, syncLocalStorage]);
   useEffect(() => { if (syncLocalStorage) writeStorage(STORAGE_KEYS.bankAccounts, bankAccounts); }, [bankAccounts, syncLocalStorage]);
+  useEffect(() => { if (syncLocalStorage) writeStorage(STORAGE_KEYS.staffUsers, staffUsers); }, [staffUsers, syncLocalStorage]);
 
   const addToast = (title: string, description?: string, tone: ToastTone = "success") => {
     const id = createId("toast");
@@ -728,6 +737,14 @@ function App() {
     removed.forEach((a) => db.deleteBankAccount(a.id).catch(() => {}));
   };
 
+  const handleStaffUsersChange = (users: StaffUser[]) => {
+    setStaffUsers(users);
+    if (!isSupabaseConfigured) return;
+    users.forEach((u) => db.upsertStaffUser(u).catch(() => {}));
+    const removed = staffUsers.filter((a) => !users.find((nu) => nu.id === a.id));
+    removed.forEach((u) => db.deleteStaffUser(u.id).catch(() => {}));
+  };
+
   const generateVoucherCode = (prefix: string = "SOUL") => {
     const suffix = Math.random().toString(36).substring(2, 7).toUpperCase();
     return `${prefix}${suffix}`;
@@ -789,10 +806,10 @@ function App() {
   };
 
   const handleSignOut = async () => {
+    setPwAdminLoggedIn(false);
+    setStaffUserLoggedIn(null);
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
-    } else {
-      setPwAdminLoggedIn(false);
     }
     setView("home");
   };
@@ -865,11 +882,7 @@ function App() {
           </motion.main>
         ) : !isAdminLoggedIn ? (
           <motion.main key="admin-login" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.35 }} className="flex min-h-[calc(100vh-81px)] items-center justify-center px-4 py-12">
-            {isSupabaseConfigured ? (
-              <SupabaseLogin onCancel={() => setView("home")} />
-            ) : (
-              <AdminLogin correctPassword={settings.adminPassword ?? "admin123"} onLogin={() => { setPwAdminLoggedIn(true); addToast("Access granted", "Welcome to the admin dashboard."); }} onCancel={() => setView("home")} />
-            )}
+              <AdminLogin correctPassword={settings.adminPassword ?? "admin123"} staffUsers={staffUsers} useSupabase={isSupabaseConfigured} onLoginAdmin={() => { setPwAdminLoggedIn(true); addToast("Access granted", "Welcome to the admin dashboard."); }} onLoginStaff={(email) => { setStaffUserLoggedIn(email); addToast("Access granted", `Welcome, ${email}.`); }} onCancel={() => setView("home")} />
           </motion.main>
         ) : (
           <motion.main key="admin" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.35 }} className="min-h-screen bg-stone-950">
@@ -882,6 +895,9 @@ function App() {
               rooms={settings.rooms}
               adminTab={adminTab}
               setAdminTab={setAdminTab}
+              isStaff={isStaff}
+              staffUsers={staffUsers}
+              onStaffUsersChange={handleStaffUsersChange}
               bookingDraft={bookingDraft}
               setBookingDraft={setBookingDraft}
               editingBookingId={editingBookingId}
@@ -1000,14 +1016,30 @@ function SupabaseLogin({ onCancel }: { onCancel: () => void }) {
 }
 
 // ===================================================================
-// ADMIN LOGIN (legacy password-based fallback)
+// ADMIN LOGIN
 // ===================================================================
-function AdminLogin({ correctPassword, onLogin, onCancel }: { correctPassword: string; onLogin: () => void; onCancel: () => void }) {
+function AdminLogin({ correctPassword, staffUsers, useSupabase, onLoginAdmin, onLoginStaff, onCancel }: { correctPassword: string; staffUsers: StaffUser[]; useSupabase?: boolean; onLoginAdmin: () => void; onLoginStaff: (email: string) => void; onCancel: () => void }) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
-  const handleSubmit = (e: React.FormEvent) => {
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === correctPassword) { setError(false); onLogin(); } else setError(true);
+    setError("");
+    setLoading(true);
+    try {
+      if (useSupabase) {
+        if (!supabase) return;
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (!signInError) { setLoading(false); onLoginAdmin(); return; }
+      }
+      const user = staffUsers.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
+      if (user && user.password === password) { setLoading(false); onLoginStaff(user.email); return; }
+      if (!useSupabase && password === correctPassword) { setLoading(false); onLoginAdmin(); return; }
+      setError("Incorrect email or password.");
+    } finally {
+      setLoading(false);
+    }
   };
   return (
     <div className="w-full max-w-md rounded-3xl border border-stone-700 bg-stone-900 p-8 shadow-2xl shadow-stone-950/60">
@@ -1016,17 +1048,23 @@ function AdminLogin({ correctPassword, onLogin, onCancel }: { correctPassword: s
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
         </div>
         <h2 className="mt-4 text-2xl font-serif font-semibold text-stone-100">Staff Access</h2>
-        <p className="mt-2 text-sm text-stone-400">Enter the admin password to access the dashboard.</p>
+        <p className="mt-2 text-sm text-stone-400">Sign in to manage the lounge.</p>
       </div>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <div>
+            <label className="block text-sm text-stone-300">Email</label>
+            <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }} placeholder="you@example.com" required className="mt-2 w-full rounded-xl border border-stone-700 bg-stone-950 px-4 py-3 text-stone-100 placeholder:text-stone-600 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" />
+          </div>
         <div>
           <label className="block text-sm text-stone-300">Password</label>
-          <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(false); }} placeholder="••••••••" required className="mt-2 w-full rounded-xl border border-stone-700 bg-stone-950 px-4 py-3 text-stone-100 placeholder:text-stone-600 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" />
-          {error && <p className="mt-2 text-xs text-rose-400">Incorrect password.</p>}
+          <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} placeholder="••••••••" required className="mt-2 w-full rounded-xl border border-stone-700 bg-stone-950 px-4 py-3 text-stone-100 placeholder:text-stone-600 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20" />
+          {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
         </div>
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center text-xs text-amber-200/80">☕ Default password: <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-amber-300">admin123</code></div>
+        {!useSupabase && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center text-xs text-amber-200/80">Default admin password: <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-amber-300">admin123</code></div>
+        )}
         <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-          <ActionButton type="submit" className="w-full sm:flex-1">Sign in</ActionButton>
+          <ActionButton type="submit" className="w-full sm:flex-1" disabled={loading}>{loading ? "Signing in..." : "Sign in"}</ActionButton>
           <ActionButton variant="ghost" onClick={onCancel} className="w-full sm:flex-1">Cancel</ActionButton>
         </div>
       </form>
@@ -1510,6 +1548,9 @@ function AdminPanel(props: {
   rooms: RoomItem[];
   adminTab: AdminTab;
   setAdminTab: (t: AdminTab) => void;
+  isStaff: boolean;
+  staffUsers: StaffUser[];
+  onStaffUsersChange: (users: StaffUser[]) => void;
   bookingDraft: BookingDraft;
   setBookingDraft: (d: BookingDraft) => void;
   editingBookingId: string | null;
@@ -1546,12 +1587,23 @@ function AdminPanel(props: {
   onRefundPayment: (paymentId: string) => void;
   onBankAccountsChange: (accounts: BankAccount[]) => void;
 }) {
-  const { bookings, contacts, payments, bankAccounts, settings, rooms, adminTab, setAdminTab, bookingDraft, setBookingDraft, editingBookingId, isFrontDeskOpen, setIsFrontDeskOpen, onSubmitBooking, onEditBooking, onDeleteBooking, contactUpdateStatus, onDeleteContact, onSettingsChange, onSaveSettings, onCloseAdmin, onSignOut, onCancelBookingEdit, roomDraft, onStartCreateRoom, onStartEditRoom, onSaveRoomDraft, onDeleteRoom, onCancelRoomEdit, vouchers, onAddVoucher, onUpdateVoucher, onDeleteVoucher, onGenerateCode, onToast, handleApplyVoucher, clearVoucher, voucherFeedback, onConfirmPayment, onCancelPayment, onRefundPayment, onBankAccountsChange } = props;
+  const { bookings, contacts, payments, bankAccounts, settings, rooms, adminTab, setAdminTab, isStaff, staffUsers, onStaffUsersChange, bookingDraft, setBookingDraft, editingBookingId, isFrontDeskOpen, setIsFrontDeskOpen, onSubmitBooking, onEditBooking, onDeleteBooking, contactUpdateStatus, onDeleteContact, onSettingsChange, onSaveSettings, onCloseAdmin, onSignOut, onCancelBookingEdit, roomDraft, onStartCreateRoom, onStartEditRoom, onSaveRoomDraft, onDeleteRoom, onCancelRoomEdit, vouchers, onAddVoucher, onUpdateVoucher, onDeleteVoucher, onGenerateCode, onToast, handleApplyVoucher, clearVoucher, voucherFeedback, onConfirmPayment, onCancelPayment, onRefundPayment, onBankAccountsChange } = props;
+
+  // Redirect staff away from payments tab
+  useEffect(() => {
+    if (isStaff && adminTab === "payments") {
+      setAdminTab("bookings");
+    }
+    if (isStaff && adminTab === "settings") {
+      setAdminTab("bookings");
+    }
+  }, [isStaff, adminTab]);
 
   const [previewImg, setPreviewImg] = useState("");
   const [baDraft, setBaDraft] = useState<BankAccount | null>(null);
   const [voucherCreateMode, setVoucherCreateMode] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [staffDraft, setStaffDraft] = useState<StaffUser | null>(null);
   const [voucherDraft, setVoucherDraft] = useState({
     code: "",
     type: "percentage" as VoucherType,
@@ -1577,7 +1629,10 @@ function AdminPanel(props: {
           </button>
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-500/80 font-sans">Admin panel</div>
-            <h2 className="text-base font-serif font-semibold text-stone-100">Dashboard</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-serif font-semibold text-stone-100">Dashboard</h2>
+              {isStaff && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-300">Staff</span>}
+            </div>
           </div>
         </div>
         <button type="button" onClick={onCloseAdmin} className="rounded-xl border border-stone-700 bg-stone-800 px-3 py-1.5 text-xs text-stone-300 transition hover:bg-stone-700">Exit</button>
@@ -1600,11 +1655,11 @@ function AdminPanel(props: {
             {([
               ["bookings", `Bookings (${bookings.length})`],
               ["contacts", `Contacts (${contacts.length})`],
-              ["payments", `Payments (${payments.length})`],
+              ...(isStaff ? [] : [["payments", `Payments (${payments.length})`] as [AdminTab, string]]),
               ["rooms", "Rooms"],
               ["vouchers", "Vouchers"],
               ["analytics", "Analytics"],
-              ["settings", "Settings"],
+              ...(isStaff ? [] : [["settings", "Settings"] as [AdminTab, string]]),
             ] as [AdminTab, string][]).map(([tab, label]) => (
               <SidebarButton key={tab} active={adminTab === tab} onClick={() => { setAdminTab(tab); setMobileSidebarOpen(false); }}>{label}</SidebarButton>
             ))}
@@ -1624,16 +1679,19 @@ function AdminPanel(props: {
       <aside className="hidden lg:block h-fit rounded-2xl border border-stone-800 bg-stone-900 p-4">
         <div className="border-b border-stone-800 pb-4 space-y-1">
           <div className="text-[10px] uppercase tracking-[0.3em] text-amber-500/80 font-sans">Admin panel</div>
-          <h2 className="text-xl font-serif font-semibold text-stone-100">Dashboard</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-serif font-semibold text-stone-100">Dashboard</h2>
+            {isStaff && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-300">Staff</span>}
+          </div>
         </div>
         <div className="mt-4 space-y-2">
           <SidebarButton active={adminTab === "bookings"} onClick={() => setAdminTab("bookings")}>Bookings</SidebarButton>
           <SidebarButton active={adminTab === "contacts"} onClick={() => setAdminTab("contacts")}>Contacts</SidebarButton>
-          <SidebarButton active={adminTab === "payments"} onClick={() => setAdminTab("payments")}>Payments</SidebarButton>
+          {!isStaff && <SidebarButton active={adminTab === "payments"} onClick={() => setAdminTab("payments")}>Payments</SidebarButton>}
           <SidebarButton active={adminTab === "rooms"} onClick={() => setAdminTab("rooms")}>Rooms</SidebarButton>
           <SidebarButton active={adminTab === "vouchers"} onClick={() => setAdminTab("vouchers")}>Discount Vouchers</SidebarButton>
           <SidebarButton active={adminTab === "analytics"} onClick={() => setAdminTab("analytics")}>Analytics & Reports</SidebarButton>
-          <SidebarButton active={adminTab === "settings"} onClick={() => setAdminTab("settings")}>Business settings</SidebarButton>
+          {!isStaff && <SidebarButton active={adminTab === "settings"} onClick={() => setAdminTab("settings")}>Business settings</SidebarButton>}
         </div>
         <div className="mt-6 space-y-3 border-t border-stone-800 pt-4 text-sm text-stone-400">
           <div className="flex items-center justify-between"><span>Bookings</span><span className="text-amber-400 font-semibold">{bookings.length}</span></div>
@@ -2042,7 +2100,8 @@ function AdminPanel(props: {
                 <div className="mt-6"><ActionButton type="submit">Save business settings</ActionButton></div>
               </form>
 
-              {/* ── Bank Accounts Section ── */}
+              {/* ── Bank Accounts Section (admin only) ── */}
+              {!isStaff && (
               <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -2133,6 +2192,85 @@ function AdminPanel(props: {
                   ))}
                 </div>
               </div>
+              )}
+
+              {/* ── Staff Accounts Section (admin only) ── */}
+              {!isStaff && (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-amber-500/80 font-sans">Staff Management</p>
+                    <h3 className="mt-1 text-xl font-serif font-semibold text-stone-100">User Accounts</h3>
+                    <p className="mt-1 text-sm text-stone-400">Create and manage users. Staff can access all features except payments. Admin has full access.</p>
+                  </div>
+                  <button type="button" onClick={() => setStaffDraft({ id: createId("stf"), email: "", password: "", role: "staff", createdAt: new Date().toISOString() })} className="w-full sm:w-auto rounded-full bg-amber-400 px-5 py-3 text-sm font-bold text-stone-950 shadow-md shadow-amber-500/20 hover:bg-amber-300 transition">+ Add User</button>
+                </div>
+
+                {staffDraft && (
+                  <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-5 space-y-4">
+                    <h4 className="text-sm font-semibold text-amber-300">{staffUsers.find((u) => u.id === staffDraft.id) ? "Edit" : "New"} User Account</h4>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Email">
+                        <Input value={staffDraft.email} onChange={(v) => setStaffDraft({ ...staffDraft, email: v })} type="email" placeholder="staff@example.com" required />
+                      </Field>
+                      <Field label="Password">
+                        <Input value={staffDraft.password} onChange={(v) => setStaffDraft({ ...staffDraft, password: v })} type="text" placeholder="password" required />
+                      </Field>
+                      <Field label="Role">
+                        <select value={staffDraft.role} onChange={(e) => setStaffDraft({ ...staffDraft, role: e.target.value as "admin" | "staff" })} className="w-full rounded-xl border border-stone-700 bg-stone-950 px-4 py-3 text-stone-100 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20">
+                          <option value="staff">Staff</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </Field>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <ActionButton onClick={() => {
+                        if (!staffDraft.email.trim() || !staffDraft.password.trim()) {
+                          onToast("Missing fields", "Email and password are required.", "warning");
+                          return;
+                        }
+                        if (staffUsers.some((u) => u.email.toLowerCase() === staffDraft.email.trim().toLowerCase() && u.id !== staffDraft.id)) {
+                          onToast("Duplicate email", "That email is already taken.", "warning");
+                          return;
+                        }
+                        const exists = staffUsers.find((u) => u.id === staffDraft.id);
+                        const updated = exists
+                          ? staffUsers.map((u) => (u.id === staffDraft.id ? { ...staffDraft, email: staffDraft.email.trim() } : u))
+                          : [...staffUsers, { ...staffDraft, email: staffDraft.email.trim() }];
+                        onStaffUsersChange(updated);
+                        setStaffDraft(null);
+                        onToast(exists ? "Staff account updated" : "Staff account created", `${staffDraft.email.trim()} can now sign in.`);
+                      }} className="w-full sm:w-auto">Save Staff</ActionButton>
+                      <ActionButton variant="ghost" onClick={() => setStaffDraft(null)} className="w-full sm:w-auto">Cancel</ActionButton>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div className="divide-y divide-stone-800">
+                  {staffUsers.length === 0 && <EmptyState message="No staff accounts yet. Add one above." />}
+                  {staffUsers.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between py-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-stone-100">{u.email}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${u.role === "admin" ? "bg-amber-500/15 text-amber-300" : "bg-sky-500/15 text-sky-300"}`}>{u.role === "admin" ? "Admin" : "Staff"}</span>
+                        </div>
+                        <div className="text-xs text-stone-500">Created {formatDateTime(u.createdAt)}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setStaffDraft({ ...u })} className="rounded-full border border-white/10 px-3 py-2 text-sm text-white transition hover:bg-white/10">Edit</button>
+                        <button type="button" onClick={() => {
+                          if (confirm(`Delete staff account ${u.email}?`)) {
+                            onStaffUsersChange(staffUsers.filter((a) => a.id !== u.id));
+                            onToast("Staff deleted", `${u.email} removed.`, "warning");
+                          }
+                        }} className="rounded-full border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100 transition hover:bg-rose-500/20">Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              )}
             </motion.section>
           )}
         </AnimatePresence>

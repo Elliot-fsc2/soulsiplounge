@@ -154,3 +154,12 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
   "qrCodeUrl"     TEXT NOT NULL DEFAULT '',
   "isActive"      BOOLEAN NOT NULL DEFAULT true
 );
+
+-- Staff Users
+CREATE TABLE IF NOT EXISTS staff_users (
+  "id"            TEXT PRIMARY KEY,
+  "email"         TEXT NOT NULL UNIQUE,
+  "password"      TEXT NOT NULL,
+  "role"          TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin', 'staff')),
+  "createdAt"     TEXT NOT NULL DEFAULT (to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+);

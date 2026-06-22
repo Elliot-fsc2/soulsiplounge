@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
-import type { Booking, ContactMessage, Payment, BankAccount, RoomItem, Settings, Voucher } from "./types";
+import type { Booking, ContactMessage, Payment, BankAccount, RoomItem, Settings, StaffUser, Voucher } from "./types";
 
 class DbError extends Error {
   constructor(msg: string, public cause?: unknown) {
@@ -300,4 +300,25 @@ export async function deleteBankAccount(id: string): Promise<void> {
   if (!isSupabaseConfigured) notConfigured();
   const { error } = await supabase!.from("bank_accounts").delete().eq("id", id);
   if (error) throw new DbError("Failed to delete bank account", error);
+}
+
+// ── Staff Users ────────────────────────────────────────────────────
+
+export async function fetchStaffUsers(): Promise<StaffUser[]> {
+  if (!isSupabaseConfigured) notConfigured();
+  const { data, error } = await supabase!.from("staff_users").select("*").order("createdAt", { ascending: true });
+  if (error) throw new DbError("Failed to fetch staff users", error);
+  return data as StaffUser[];
+}
+
+export async function upsertStaffUser(user: StaffUser): Promise<void> {
+  if (!isSupabaseConfigured) notConfigured();
+  const { error } = await supabase!.from("staff_users").upsert(user).eq("id", user.id);
+  if (error) throw new DbError("Failed to save staff user", error);
+}
+
+export async function deleteStaffUser(id: string): Promise<void> {
+  if (!isSupabaseConfigured) notConfigured();
+  const { error } = await supabase!.from("staff_users").delete().eq("id", id);
+  if (error) throw new DbError("Failed to delete staff user", error);
 }
