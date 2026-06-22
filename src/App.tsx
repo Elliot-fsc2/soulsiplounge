@@ -938,7 +938,7 @@ function SiteHeader({ businessName, view, onNavigate, onOpenAdmin }: { businessN
     <header className="sticky top-0 z-40 border-b border-stone-800 bg-stone-950/90 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <button type="button" onClick={() => onNavigate("home")} className="text-left max-w-[180px] sm:max-w-xs truncate">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-amber-500/80 font-sans">An elevated social lounge for every occasionss</div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-amber-500/80 font-sans">An elevated social lounge for every occasion</div>
           <div className="text-base sm:text-xl font-serif font-semibold text-stone-100 truncate">{businessName}</div>
         </button>
         <nav className="flex items-center gap-3 sm:gap-5">
