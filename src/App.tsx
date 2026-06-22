@@ -1630,7 +1630,7 @@ function AdminPanel(props: {
           <SidebarButton active={adminTab === "bookings"} onClick={() => setAdminTab("bookings")}>Bookings</SidebarButton>
           <SidebarButton active={adminTab === "contacts"} onClick={() => setAdminTab("contacts")}>Contacts</SidebarButton>
           <SidebarButton active={adminTab === "payments"} onClick={() => setAdminTab("payments")}>Payments</SidebarButton>
-          <SidebarButton active={adminTab === "rooms"} onClick={() => setAdminTab("rooms")}>Rooms CRUD</SidebarButton>
+          <SidebarButton active={adminTab === "rooms"} onClick={() => setAdminTab("rooms")}>Rooms</SidebarButton>
           <SidebarButton active={adminTab === "vouchers"} onClick={() => setAdminTab("vouchers")}>Discount Vouchers</SidebarButton>
           <SidebarButton active={adminTab === "analytics"} onClick={() => setAdminTab("analytics")}>Analytics & Reports</SidebarButton>
           <SidebarButton active={adminTab === "settings"} onClick={() => setAdminTab("settings")}>Business settings</SidebarButton>
