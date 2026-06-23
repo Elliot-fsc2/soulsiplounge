@@ -221,6 +221,20 @@ export async function seedDefaults(
 ): Promise<void> {
   if (!isSupabaseConfigured) notConfigured();
 
+  const { count: settingsCount, error: scErr } = await supabase!.from("business_settings").select("*", { count: "exact", head: true });
+  if (scErr) throw new DbError("Failed to check settings", scErr);
+
+  // Only seed defaults on a truly fresh system (settings don't exist yet)
+  if (settingsCount > 0) return;
+
+  const { rooms, ...rest } = defaultSettings;
+  const { error: sErr } = await supabase!.from("business_settings").insert({ id: "default", ...rest });
+  if (sErr) throw new DbError("Failed to seed settings", sErr);
+
+  for (const room of rooms) {
+    await saveRoom(room);
+  }
+
   const { count: bookingCount, error: bcErr } = await supabase!.from("bookings").select("*", { count: "exact", head: true });
   if (bcErr) throw new DbError("Failed to check bookings", bcErr);
 
@@ -235,20 +249,6 @@ export async function seedDefaults(
   if (contactCount === 0 && defaultContacts.length > 0) {
     const { error } = await supabase!.from("contacts").insert(defaultContacts);
     if (error) throw new DbError("Failed to seed contacts", error);
-  }
-
-  const { count: settingsCount, error: scErr } = await supabase!.from("business_settings").select("*", { count: "exact", head: true });
-  if (scErr) throw new DbError("Failed to check settings", scErr);
-
-  if (settingsCount === 0) {
-    const { rooms, ...rest } = defaultSettings;
-    const { error } = await supabase!.from("business_settings").insert({ id: "default", ...rest });
-    if (error) throw new DbError("Failed to seed settings", error);
-
-    // Seed rooms + pricing
-    for (const room of rooms) {
-      await saveRoom(room);
-    }
   }
 
   const { count: voucherCount, error: vcErr } = await supabase!.from("vouchers").select("*", { count: "exact", head: true });
